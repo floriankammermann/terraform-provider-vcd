@@ -88,6 +88,7 @@ func Provider() terraform.ResourceProvider {
 			"vcd_network_direct":   resourceVcdNetworkDirect(),
 			"vcd_network_isolated": resourceVcdNetworkIsolated(),
 			"vcd_vapp_network":     resourceVcdVappNetwork(),
+			"vcd_vapp_network_nat": resourceVcdVappNetworkNat(),
 			"vcd_vapp":             resourceVcdVApp(),
 			"vcd_firewall_rules":   resourceVcdFirewallRules(),
 			"vcd_dnat":             resourceVcdDNAT(),

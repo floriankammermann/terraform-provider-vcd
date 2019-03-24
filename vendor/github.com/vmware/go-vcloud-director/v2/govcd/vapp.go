@@ -45,6 +45,9 @@ type VappNetworkSettings struct {
 	GuestVLANAllowed bool
 	StaticIPRanges   []*types.IPRange
 	DhcpSettings     *DhcpSettings
+	ParentNetwork    *types.Reference
+	FenceMode        string
+	FirewallRules    []*types.FirewallRule
 }
 
 // struct type used to pass information for vApp network DHCP
@@ -53,6 +56,9 @@ type DhcpSettings struct {
 	MaxLeaseTime     int
 	DefaultLeaseTime int
 	IPRange          *types.IPRange
+}
+
+type NatRules struct {
 }
 
 // Returns the vdc where the vapp resides in.
@@ -136,9 +142,9 @@ func (vapp *VApp) AddVM(orgVdcNetworks []*types.OrgVDCNetwork, vappNetworkName s
 			},
 			InstantiationParams: &types.InstantiationParams{
 				NetworkConnectionSection: &types.NetworkConnectionSection{
-					Type:                          vappTemplate.VAppTemplate.Children.VM[0].NetworkConnectionSection.Type,
-					HREF:                          vappTemplate.VAppTemplate.Children.VM[0].NetworkConnectionSection.HREF,
-					Info:                          "Network config for sourced item",
+					Type: vappTemplate.VAppTemplate.Children.VM[0].NetworkConnectionSection.Type,
+					HREF: vappTemplate.VAppTemplate.Children.VM[0].NetworkConnectionSection.HREF,
+					Info: "Network config for sourced item",
 					PrimaryNetworkConnectionIndex: vappTemplate.VAppTemplate.Children.VM[0].NetworkConnectionSection.PrimaryNetworkConnectionIndex,
 				},
 			},
@@ -1144,7 +1150,7 @@ func (vapp *VApp) AddRAWNetworkConfig(orgvdcnetworks []*types.OrgVDCNetwork) (Ta
 }
 
 // Function allows to create isolated network for vApp. This is equivalent to vCD UI function - vApp network creation.
-func (vapp *VApp) AddIsolatedNetwork(newIsolatedNetworkSettings *VappNetworkSettings) (Task, error) {
+func (vapp *VApp) AddVAppNetwork(newIsolatedNetworkSettings *VappNetworkSettings) (Task, error) {
 
 	err := validateNetworkConfigSettings(newIsolatedNetworkSettings)
 	if err != nil {
@@ -1166,14 +1172,38 @@ func (vapp *VApp) AddIsolatedNetwork(newIsolatedNetworkSettings *VappNetworkSett
 			IPRange:          newIsolatedNetworkSettings.DhcpSettings.IPRange}}
 	}
 
+	rules := []*types.FirewallRule{
+		&types.FirewallRule{
+			Description: "description1",
+			IsEnabled:   true,
+			Policy:      "allow",
+			Protocols: &types.FirewallRuleProtocols{
+				Any: true,
+			},
+			DestinationPortRange: "443",
+			DestinationIP:        "Any",
+			SourcePortRange:      "Any",
+			SourceIP:             "internal",
+			EnableLogging:        false,
+		},
+	}
+	networkFeatures = &types.NetworkFeatures{}
+	networkFeatures.FirewallService = &types.FirewallService{
+		IsEnabled:        true,
+		DefaultAction:    "drop",
+		LogDefaultAction: false,
+		FirewallRule:     rules,
+	}
+
 	networkConfigurations := vapp.VApp.NetworkConfigSection.NetworkConfig
 	networkConfigurations = append(networkConfigurations,
 		types.VAppNetworkConfiguration{
 			NetworkName: newIsolatedNetworkSettings.Name,
 			Configuration: &types.NetworkConfiguration{
-				FenceMode:        "isolated",
+				FenceMode:        newIsolatedNetworkSettings.FenceMode,
 				GuestVlanAllowed: newIsolatedNetworkSettings.GuestVLANAllowed,
 				Features:         networkFeatures,
+				ParentNetwork:    newIsolatedNetworkSettings.ParentNetwork,
 				IPScopes: &types.IPScopes{IPScope: types.IPScope{IsInherited: false, Gateway: newIsolatedNetworkSettings.Gateway,
 					Netmask: newIsolatedNetworkSettings.NetMask, DNS1: newIsolatedNetworkSettings.DNS1,
 					DNS2: newIsolatedNetworkSettings.DNS2, DNSSuffix: newIsolatedNetworkSettings.DNSSuffix, IsEnabled: true,
@@ -1181,6 +1211,23 @@ func (vapp *VApp) AddIsolatedNetwork(newIsolatedNetworkSettings *VappNetworkSett
 			},
 			IsDeployed: false,
 		})
+
+	return updateNetworkConfigurations(vapp, networkConfigurations)
+
+}
+
+func (vapp *VApp) AddVAppNetworkNatRules(vAppNetworkName string, natService *types.NatService) (Task, error) {
+
+	networkConfigurations := vapp.VApp.NetworkConfigSection.NetworkConfig
+
+	var networkConfigToUpdate types.VAppNetworkConfiguration
+	for _, nc := range networkConfigurations {
+		if nc.NetworkName == vAppNetworkName {
+			networkConfigToUpdate = nc
+		}
+	}
+
+	networkConfigToUpdate.Configuration.Features.NatService = natService
 
 	return updateNetworkConfigurations(vapp, networkConfigurations)
 

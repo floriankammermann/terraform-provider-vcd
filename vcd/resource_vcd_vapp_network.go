@@ -2,9 +2,10 @@ package vcd
 
 import (
 	"fmt"
+	"log"
+
 	"github.com/vmware/go-vcloud-director/v2/govcd"
 	"github.com/vmware/go-vcloud-director/v2/types/v56"
-	"log"
 
 	"github.com/hashicorp/terraform/helper/schema"
 )
@@ -24,6 +25,11 @@ func resourceVcdVappNetwork() *schema.Resource {
 			"vapp_name": &schema.Schema{
 				Type:     schema.TypeString,
 				Required: true,
+				ForceNew: true,
+			},
+			"parent_network": &schema.Schema{
+				Type:     schema.TypeString,
+				Optional: true,
 				ForceNew: true,
 			},
 			"org": {
@@ -131,6 +137,55 @@ func resourceVcdVappNetwork() *schema.Resource {
 				},
 				Set: resourceVcdNetworkIPAddressHash,
 			},
+			"fence_mode": &schema.Schema{
+				Type:     schema.TypeString,
+				Optional: true,
+				ForceNew: true,
+				Default:  "isolated",
+			},
+			"firewall_rule": &schema.Schema{
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"description": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+
+						"policy": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+
+						"protocol": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+
+						"destination_port": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+
+						"destination_ip": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+
+						"source_port": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+
+						"source_ip": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+					},
+				},
+			},
 		},
 	}
 }
@@ -150,7 +205,19 @@ func resourceVcdVappNetworkCreate(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("error finding vApp. %#v", err)
 	}
 
+	vdcOrgNetwork, err := vdc.FindVDCNetwork(d.Get("parent_network").(string))
+	if err != nil {
+		return fmt.Errorf("error finding orgNetwork. %#v", err)
+	}
+
 	staticIpRanges := expandIPRange(d.Get("static_ip_pool").(*schema.Set).List())
+
+	parentNetwork := &types.Reference{
+		HREF: vdcOrgNetwork.OrgVDCNetwork.HREF,
+		ID:   vdcOrgNetwork.OrgVDCNetwork.ID,
+		Type: vdcOrgNetwork.OrgVDCNetwork.Type,
+		Name: vdcOrgNetwork.OrgVDCNetwork.Name,
+	}
 
 	vappNetworkSettings := &govcd.VappNetworkSettings{
 		Name:             d.Get("name").(string),
@@ -159,6 +226,8 @@ func resourceVcdVappNetworkCreate(d *schema.ResourceData, meta interface{}) erro
 		DNS1:             d.Get("dns1").(string),
 		DNS2:             d.Get("dns2").(string),
 		DNSSuffix:        d.Get("dns_suffix").(string),
+		ParentNetwork:    parentNetwork,
+		FenceMode:        d.Get("fence_mode").(string),
 		StaticIPRanges:   staticIpRanges.IPRange,
 		GuestVLANAllowed: d.Get("guest_vlan_allowed").(bool),
 	}
@@ -175,7 +244,26 @@ func resourceVcdVappNetworkCreate(d *schema.ResourceData, meta interface{}) erro
 		}
 	}
 
-	task, err := vapp.AddIsolatedNetwork(vappNetworkSettings)
+	if firewallrules, ok := d.GetOk("firewall_rules"); ok && len(firewallrules.(*schema.Set).List()) > 0 {
+		vappNetworkSettings.FirewallRules = []*types.FirewallRule{}
+		for _, item := range firewallrules.(*schema.Set).List() {
+			data := item.(map[string]interface{})
+			firewallrule := &types.FirewallRule{
+				Description: data["description"].(string),
+				Policy:      data["policy"].(string),
+				Protocols: &types.FirewallRuleProtocols{
+					Any: true,
+				},
+				DestinationPortRange: data["destination_port"].(string),
+				DestinationIP:        data["destination_ip"].(string),
+				SourcePortRange:      data["source_port"].(string),
+				SourceIP:             data["source_ip"].(string),
+			}
+			vappNetworkSettings.FirewallRules = append(vappNetworkSettings.FirewallRules, firewallrule)
+		}
+	}
+
+	task, err := vapp.AddVAppNetwork(vappNetworkSettings)
 
 	if err != nil {
 		return fmt.Errorf("error creating vApp network. %#v", err)
