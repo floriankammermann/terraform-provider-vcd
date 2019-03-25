@@ -1171,28 +1171,12 @@ func (vapp *VApp) AddVAppNetwork(newIsolatedNetworkSettings *VappNetworkSettings
 			MaxLeaseTime:     newIsolatedNetworkSettings.DhcpSettings.MaxLeaseTime,
 			IPRange:          newIsolatedNetworkSettings.DhcpSettings.IPRange}}
 	}
-
-	rules := []*types.FirewallRule{
-		&types.FirewallRule{
-			Description: "description1",
-			IsEnabled:   true,
-			Policy:      "allow",
-			Protocols: &types.FirewallRuleProtocols{
-				Any: true,
-			},
-			DestinationPortRange: "443",
-			DestinationIP:        "Any",
-			SourcePortRange:      "Any",
-			SourceIP:             "internal",
-			EnableLogging:        false,
-		},
-	}
 	networkFeatures = &types.NetworkFeatures{}
 	networkFeatures.FirewallService = &types.FirewallService{
 		IsEnabled:        true,
 		DefaultAction:    "drop",
 		LogDefaultAction: false,
-		FirewallRule:     rules,
+		FirewallRule:     newIsolatedNetworkSettings.FirewallRules,
 	}
 
 	networkConfigurations := vapp.VApp.NetworkConfigSection.NetworkConfig
@@ -1228,6 +1212,7 @@ func (vapp *VApp) AddVAppNetworkNatRules(vAppNetworkName string, natService *typ
 	}
 
 	networkConfigToUpdate.Configuration.Features.NatService = natService
+	networkConfigToUpdate.Configuration.Features.StaticRoutingService.IsEnabled = true
 
 	return updateNetworkConfigurations(vapp, networkConfigurations)
 

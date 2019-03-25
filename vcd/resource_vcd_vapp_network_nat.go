@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/vmware/go-vcloud-director/v2/govcd"
 	"github.com/vmware/go-vcloud-director/v2/types/v56"
 )
 
@@ -86,22 +88,35 @@ func resourceVcdVappNetworkNATCreate(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf(errorRetrievingOrgAndVdc, err)
 	}
 
-	vapp, err := vdc.FindVAppByName(d.Get("vapp_name").(string))
-	if err != nil {
-		return fmt.Errorf("error finding vApp. %#v", err)
-	}
+	var vapp govcd.VApp
 
-	fmt.Println(vapp.VApp.Name)
+	for i := 0; i <= 60; i += 1 {
+		vapp, err = vdc.FindVAppByName(d.Get("vapp_name").(string))
+		if err != nil {
+			return fmt.Errorf("error finding vApp. %#v", err)
+		}
+
+		fmt.Println(vapp.VApp.Name)
+
+		networkConfig, err := vapp.GetNetworkConfig()
+		if err != nil {
+			return fmt.Errorf("error getting network config section: %#v", err)
+		}
+
+		if len(networkConfig.NetworkConfig) >= 1 {
+			break
+		}
+
+		time.Sleep(3000 * time.Millisecond)
+	}
 
 	networkConfig, err := vapp.GetNetworkConfig()
 	if err != nil {
 		return fmt.Errorf("error getting network config section: %#v", err)
 	}
-
 	if len(networkConfig.NetworkConfig) < 1 {
-		return fmt.Errorf("networkConfig is not set")
+		return fmt.Errorf("networkConfig is not set on create")
 	}
-
 	if len(networkConfig.NetworkConfig) > 1 {
 		return fmt.Errorf("multipe networkConfigs are set")
 	}
@@ -171,7 +186,7 @@ func resourceVcdVappNetworkNATRead(d *schema.ResourceData, meta interface{}) err
 	}
 
 	if len(networkConfig.NetworkConfig) < 1 {
-		return fmt.Errorf("networkConfig is not set")
+		return nil
 	}
 
 	if len(networkConfig.NetworkConfig) > 1 {

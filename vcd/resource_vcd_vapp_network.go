@@ -244,9 +244,9 @@ func resourceVcdVappNetworkCreate(d *schema.ResourceData, meta interface{}) erro
 		}
 	}
 
-	if firewallrules, ok := d.GetOk("firewall_rules"); ok && len(firewallrules.(*schema.Set).List()) > 0 {
+	if firewallrules, ok := d.GetOk("firewall_rule"); ok && len(firewallrules.([]interface{})) > 0 {
 		vappNetworkSettings.FirewallRules = []*types.FirewallRule{}
-		for _, item := range firewallrules.(*schema.Set).List() {
+		for _, item := range firewallrules.([]interface{}) {
 			data := item.(map[string]interface{})
 			firewallrule := &types.FirewallRule{
 				Description: data["description"].(string),

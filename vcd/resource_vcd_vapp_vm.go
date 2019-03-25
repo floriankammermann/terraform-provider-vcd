@@ -6,6 +6,7 @@ import (
 	"log"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/hashicorp/terraform/helper/hashcode"
 	"github.com/hashicorp/terraform/helper/resource"
@@ -170,6 +171,24 @@ func resourceVcdVAppVmCreate(d *schema.ResourceData, meta interface{}) error {
 		}
 	}
 
+	for i := 0; i <= 60; i += 1 {
+		vappNetworkName := d.Get("vapp_network_name").(string)
+		vapp, err = vdc.FindVAppByName(d.Get("vapp_name").(string))
+		if err != nil {
+			return fmt.Errorf("error finding vApp: %#v", err)
+		}
+		if vappNetworkName != "" {
+			isVappNetwork, err := isItVappNetwork(vappNetworkName, vapp)
+			if err != nil {
+				continue
+			}
+			if isVappNetwork {
+				break
+			}
+		}
+		time.Sleep(3000 * time.Millisecond)
+	}
+
 	vappNetworkName := d.Get("vapp_network_name").(string)
 	if vappNetworkName != "" {
 		isVappNetwork, err := isItVappNetwork(vappNetworkName, vapp)
@@ -180,7 +199,6 @@ func resourceVcdVAppVmCreate(d *schema.ResourceData, meta interface{}) error {
 			return fmt.Errorf("vapp_network_name: %s is not found", vappNetworkName)
 		}
 	}
-
 	err = retryCall(vcdClient.MaxRetryTimeout, func() *resource.RetryError {
 		log.Printf("[TRACE] Creating VM: %s", d.Get("name").(string))
 		var networks []*types.OrgVDCNetwork
